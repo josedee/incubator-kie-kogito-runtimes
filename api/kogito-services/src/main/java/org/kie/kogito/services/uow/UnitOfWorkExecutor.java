@@ -42,7 +42,7 @@ public class UnitOfWorkExecutor {
 
             return result;
         } catch (ProcessInstanceExecutionException e) {
-            uow.end();
+            uow.abort();
             throw e;
         } catch (Exception e) {
             uow.abort();
