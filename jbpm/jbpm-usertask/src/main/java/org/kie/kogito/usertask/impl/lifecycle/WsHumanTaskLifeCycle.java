@@ -133,6 +133,8 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
     private final UserTaskTransition T_SUSPENDED_EXITED = new DefaultUserTransition(EXIT, SUSPENDED, EXITED, this::resumeAndExit);
 
     private List<UserTaskTransition> transitions;
+    private Set<UserTaskTransition> engineOnlyTransitions;
+    private Set<UserTaskTransition> adminOnlyTransitions;
 
     public WsHumanTaskLifeCycle() {
         transitions = List.of(
@@ -169,21 +171,23 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
                 T_SUSPENDED_RESERVED,
                 T_SUSPENDED_INPROGRESS,
                 T_SUSPENDED_EXITED);
+        engineOnlyTransitions = Set.of(T_CREATED_READY_ACTIVATE, T_SUSPENDED_EXITED);
+        adminOnlyTransitions = Set.of(T_CREATED_READY_NOMINATE, T_CREATED_OBSOLETE);
     }
 
     @Override
     public List<UserTaskTransition> allowedTransitions(UserTaskInstance userTaskInstance, IdentityProvider identity) {
         checkPermission(userTaskInstance, identity);
-        boolean isAdmin = userTaskInstance.getAdminUsers().contains(identity.getName())
-                || !Collections.disjoint(userTaskInstance.getAdminGroups(), identity.getRoles());
+        boolean isAdmin = isAdmin(userTaskInstance, identity);
+        String previousStatus = Optional.ofNullable(userTaskInstance.getMetadata().get(PREVIOUS_STATUS))
+                .map(Object::toString)
+                .orElse(null);
         return transitions.stream()
-                .filter(t -> t.source().equals(userTaskInstance.getStatus())
-                        && (!t.id().equals(SKIP) || "true".equals(userTaskInstance.getMetadata().get(SKIPPABLE)))
-                        && (!t.id().equals(RESUME) || t.target().getName().equals(userTaskInstance.getMetadata().get(PREVIOUS_STATUS).toString()))
-                        && t != T_SUSPENDED_EXITED
-                        && t != T_CREATED_READY_ACTIVATE
-                        && (t != T_CREATED_READY_NOMINATE || isAdmin)
-                        && (t != T_CREATED_OBSOLETE || isAdmin))
+                .filter(t -> t.source().equals(userTaskInstance.getStatus()))
+                .filter(t -> !engineOnlyTransitions.contains(t))
+                .filter(t -> !adminOnlyTransitions.contains(t) || isAdmin)
+                .filter(t -> !t.id().equals(SKIP) || "true".equals(userTaskInstance.getMetadata().get(SKIPPABLE)))
+                .filter(t -> !t.id().equals(RESUME) || t.target().getName().equals(previousStatus))
                 .toList();
     }
 
@@ -253,7 +257,7 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
     }
 
     public Optional<UserTaskTransitionToken> nominate(UserTaskInstance userTaskInstance, UserTaskTransitionToken token, IdentityProvider identityProvider) {
-        if (!userTaskInstance.getAdminUsers().contains(identityProvider.getName()) && Collections.disjoint(userTaskInstance.getAdminGroups(), identityProvider.getRoles())) {
+        if (!isAdmin(userTaskInstance, identityProvider)) {
             throw new UserTaskTransitionException("User is not allowed to nominate");
         }
 
@@ -362,9 +366,7 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
     }
 
     public Optional<UserTaskTransitionToken> skip(UserTaskInstance userTaskInstance, UserTaskTransitionToken token, IdentityProvider identityProvider) {
-        if (CREATED.equals(userTaskInstance.getStatus())
-                && !userTaskInstance.getAdminUsers().contains(identityProvider.getName())
-                && Collections.disjoint(userTaskInstance.getAdminGroups(), identityProvider.getRoles())) {
+        if (CREATED.equals(userTaskInstance.getStatus()) && !isAdmin(userTaskInstance, identityProvider)) {
             throw new UserTaskTransitionException("User is not allowed to skip");
         }
         if (!Boolean.parseBoolean((String) userTaskInstance.getMetadata().get(SKIPPABLE))) {
@@ -500,25 +502,25 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
         return assignmentStrategy.computeAssignment(userTaskInstance, identityProvider).orElse(null);
     }
 
+    private boolean isAdmin(UserTaskInstance userTaskInstance, IdentityProvider identityProvider) {
+        return isAdmin(userTaskInstance, identityProvider.getName(), identityProvider.getRoles());
+    }
+
+    private boolean isAdmin(UserTaskInstance userTaskInstance, String user, Collection<String> roles) {
+        return userTaskInstance.getAdminUsers().contains(user)
+                || !Collections.disjoint(userTaskInstance.getAdminGroups(), roles);
+    }
+
     private void checkPermission(UserTaskInstance userTaskInstance, IdentityProvider identityProvider) {
         this.checkPermission(userTaskInstance, identityProvider.getName(), identityProvider.getRoles());
     }
 
     private void checkPermission(UserTaskInstance userTaskInstance, String user, Collection<String> roles) {
-
         if (WORKFLOW_ENGINE_USER.equals(user)) {
             return;
         }
 
-        // first we check admins
-        Set<String> adminUsers = userTaskInstance.getAdminUsers();
-        if (adminUsers.contains(user)) {
-            return;
-        }
-
-        Set<String> userAdminGroups = new HashSet<>(userTaskInstance.getAdminGroups());
-        userAdminGroups.retainAll(roles);
-        if (!userAdminGroups.isEmpty()) {
+        if (isAdmin(userTaskInstance, user, roles)) {
             return;
         }
 
@@ -526,27 +528,21 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
             return;
         }
 
-        Set<String> excludedUsers = userTaskInstance.getExcludedUsers();
-        if (excludedUsers != null && excludedUsers.contains(user)) {
+        if (userTaskInstance.getExcludedUsers().contains(user)) {
             String message = String.format("User '%s' is not authorized to perform an operation on user task '%s'",
                     user, userTaskInstance.getId());
             throw new UserTaskInstanceNotAuthorizedException(message);
         }
 
-        if (CREATED.equals(userTaskInstance.getStatus())
-                || READY.equals(userTaskInstance.getStatus())
-                || (SUSPENDED.equals(userTaskInstance.getStatus())
-                        && READY.getName().equals(userTaskInstance.getMetadata().get(PREVIOUS_STATUS)))) {
+        if (READY.equals(userTaskInstance.getStatus())
+                || (SUSPENDED.equals(userTaskInstance.getStatus()) && READY.getName().equals(userTaskInstance.getMetadata().get(PREVIOUS_STATUS)))) {
 
-            Set<String> users = new HashSet<>(userTaskInstance.getPotentialUsers());
-            users.removeAll(userTaskInstance.getExcludedUsers());
-            if (users.contains(user)) {
+            if (userTaskInstance.getPotentialUsers().contains(user)
+                    && !userTaskInstance.getExcludedUsers().contains(user)) {
                 return;
             }
 
-            Set<String> userPotGroups = new HashSet<>(userTaskInstance.getPotentialGroups());
-            userPotGroups.retainAll(roles);
-            if (!userPotGroups.isEmpty()) {
+            if (!Collections.disjoint(userTaskInstance.getPotentialGroups(), roles)) {
                 return;
             }
         }

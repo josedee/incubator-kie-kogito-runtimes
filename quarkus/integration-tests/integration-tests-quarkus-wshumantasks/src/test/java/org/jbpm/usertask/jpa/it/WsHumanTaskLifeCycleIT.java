@@ -677,6 +677,19 @@ public class WsHumanTaskLifeCycleIT {
     }
 
     @Test
+    public void testSkipFromCreatedTransition() {
+        var user = "carl";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(user, pid);
+        verifyTask(processId, pid, taskId, user, "Created", new String[] {});
+
+        skip(taskId, user);
+
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
     public void testSingleUserUserTaskLifeCycle() {
         var user = "jdoe";
         var processId = "manager_single_user";
