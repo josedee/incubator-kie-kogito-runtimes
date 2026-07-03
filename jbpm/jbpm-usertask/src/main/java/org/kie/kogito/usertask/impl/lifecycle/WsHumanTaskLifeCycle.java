@@ -272,7 +272,7 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
                 throw new UserTaskTransitionException("Illegal format for nominated users");
             }
         } else {
-            throw new UserTaskTransitionException("No potential users specified");
+            throw new UserTaskTransitionException("Nominated user(s) are not specified");
         }
 
         return activate(userTaskInstance, token, identityProvider);
