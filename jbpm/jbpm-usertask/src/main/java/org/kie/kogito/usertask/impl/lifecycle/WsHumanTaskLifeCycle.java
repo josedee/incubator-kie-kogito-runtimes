@@ -97,6 +97,8 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
     private final UserTaskTransition T_CREATED_READY_ACTIVATE = new DefaultUserTransition(ACTIVATE, CREATED, READY, this::activate);
     private final UserTaskTransition T_CREATED_READY_NOMINATE = new DefaultUserTransition(NOMINATE, CREATED, READY, this::nominate);
     private final UserTaskTransition T_CREATED_OBSOLETE = new DefaultUserTransition(SKIP, CREATED, OBSOLETE, this::skip);
+    private final UserTaskTransition T_CREATED_EXITED = new DefaultUserTransition(EXIT, CREATED, EXITED, this::exit);
+    private final UserTaskTransition T_CREATED_ERROR = new DefaultUserTransition(FAULT, CREATED, ERROR, this::fault);
 
     private final UserTaskTransition T_READY_READY_FORWARD = new DefaultUserTransition(FORWARD, READY, READY, this::forward);
     private final UserTaskTransition T_READY_RESERVED_CLAIM = new DefaultUserTransition(CLAIM, READY, RESERVED, this::claim);
@@ -141,6 +143,8 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
                 T_CREATED_READY_ACTIVATE,
                 T_CREATED_READY_NOMINATE,
                 T_CREATED_OBSOLETE,
+                T_CREATED_EXITED,
+                T_CREATED_ERROR,
                 T_READY_READY_FORWARD,
                 T_READY_RESERVED_CLAIM,
                 T_READY_RESERVED_DELEGATE,
@@ -172,7 +176,7 @@ public class WsHumanTaskLifeCycle implements UserTaskLifeCycle {
                 T_SUSPENDED_INPROGRESS,
                 T_SUSPENDED_EXITED);
         engineOnlyTransitions = Set.of(T_CREATED_READY_ACTIVATE, T_SUSPENDED_EXITED);
-        adminOnlyTransitions = Set.of(T_CREATED_READY_NOMINATE, T_CREATED_OBSOLETE);
+        adminOnlyTransitions = Set.of(T_CREATED_READY_NOMINATE, T_CREATED_OBSOLETE, T_CREATED_EXITED, T_CREATED_ERROR);
     }
 
     @Override

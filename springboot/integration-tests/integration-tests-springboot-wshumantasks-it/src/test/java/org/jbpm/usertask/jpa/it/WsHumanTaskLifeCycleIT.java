@@ -699,6 +699,80 @@ public class WsHumanTaskLifeCycleIT {
     }
 
     @Test
+    public void testNonAdminCannotSkipFromCreatedTransition() {
+        var admin = "carl";
+        var nonAdmin = "dave";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(admin, pid);
+        verifyTask(processId, pid, taskId, admin, "Created", new String[] {});
+
+        skipNotAuthorized(taskId, nonAdmin);
+
+        // task is still in Created state — admin can still skip it
+        skip(taskId, admin);
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
+    public void testExitFromCreatedTransition() {
+        var admin = "carl";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(admin, pid);
+        verifyTask(processId, pid, taskId, admin, "Created", new String[] {});
+
+        exit(taskId, admin);
+
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
+    public void testNonAdminCannotExitFromCreatedTransition() {
+        var admin = "carl";
+        var nonAdmin = "dave";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(admin, pid);
+        verifyTask(processId, pid, taskId, admin, "Created", new String[] {});
+
+        exitNotAuthorized(taskId, nonAdmin);
+
+        // task is still in Created state — admin can still exit it
+        exit(taskId, admin);
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
+    public void testFaultFromCreatedTransition() {
+        var admin = "carl";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(admin, pid);
+        verifyTask(processId, pid, taskId, admin, "Created", new String[] {});
+
+        fault(taskId, admin);
+
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
+    public void testNonAdminCannotFaultFromCreatedTransition() {
+        var admin = "carl";
+        var nonAdmin = "dave";
+        var processId = "manager_admin";
+        var pid = startProcessInstance(processId);
+        var taskId = getTaskId(admin, pid);
+        verifyTask(processId, pid, taskId, admin, "Created", new String[] {});
+
+        faultNotAuthorized(taskId, nonAdmin);
+
+        // task is still in Created state — admin can still fault it
+        fault(taskId, admin);
+        isProcessCompleted(processId, pid);
+    }
+
+    @Test
     public void testSingleUserUserTaskLifeCycle() {
         var user = "jdoe";
         var processId = "manager_single_user";
@@ -865,6 +939,39 @@ public class WsHumanTaskLifeCycleIT {
                 .body("id", equalTo(taskId))
                 .body("status.name", equalTo("Obsolete"))
                 .body("status.terminate", equalTo("OBSOLETE"));
+    }
+
+    private void skipNotAuthorized(String taskId, String user) {
+        given()
+                .contentType(ContentType.JSON)
+                .when()
+                .queryParam("user", user)
+                .body(new TransitionInfo("skip"))
+                .post(USER_TASKS_INSTANCE_TRANSITION_ENDPOINT, taskId)
+                .then()
+                .statusCode(403);
+    }
+
+    private void exitNotAuthorized(String taskId, String user) {
+        given()
+                .contentType(ContentType.JSON)
+                .when()
+                .queryParam("user", user)
+                .body(new TransitionInfo("exit"))
+                .post(USER_TASKS_INSTANCE_TRANSITION_ENDPOINT, taskId)
+                .then()
+                .statusCode(403);
+    }
+
+    private void faultNotAuthorized(String taskId, String user) {
+        given()
+                .contentType(ContentType.JSON)
+                .when()
+                .queryParam("user", user)
+                .body(new TransitionInfo("fault"))
+                .post(USER_TASKS_INSTANCE_TRANSITION_ENDPOINT, taskId)
+                .then()
+                .statusCode(403);
     }
 
     private void resume(String taskId, String user, String previousState) {
